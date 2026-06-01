@@ -40,7 +40,7 @@ class ApngDecoder(
             }
 
         // === The one line that differs between the `main` and `solution` branches. ===
-        val drawable: APNGDrawable = APNGDrawable(loader)
+        val drawable: APNGDrawable = ResilientApngDrawable(loader)
         // =============================================================================
 
         // Begin animating as soon as the drawable becomes visible.

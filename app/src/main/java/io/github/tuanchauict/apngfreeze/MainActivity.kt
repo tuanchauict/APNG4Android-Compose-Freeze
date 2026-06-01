@@ -203,4 +203,4 @@ fun ApngFreezeDemo(modifier: Modifier = Modifier) {
  * overrides this string.
  */
 private const val BuildVariantLabel =
-    "Branch: main — stock APNGDrawable (reproduces the freeze)"
+    "Branch: solution — ResilientApngDrawable (resumes in place across recompose)"
