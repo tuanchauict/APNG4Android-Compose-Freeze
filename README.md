@@ -85,24 +85,38 @@ stopped and/or its callback not delivering invalidations** → frozen.
 
 ## The app-side workaround (see the [`solution`](../../tree/solution) branch)
 
-Make the drawable **self-driving**: on every `draw()` (i.e. whenever it is actually
-on screen),
+Make the drawable **self-driving**, and — crucially — **never let the teardown
+happen**, so playback resumes from the *current* frame instead of restarting at
+frame 0.
 
-- if the decoder is **running**, call `invalidateSelf()` to schedule the next redraw
-  ourselves — so newly decoded frames are flushed even when Coil's callback bridge
-  isn't delivering them;
-- if the decoder is **stopped** by recompose churn **and the animation did not finish
-  naturally**, resume it (`start()` is idempotent);
-- if a **finite** animation finished on its own, leave it on the last frame.
+The trap on the recovery path is that penfeizhou's `stop()` is a *full teardown*
+(it clears frames, recycles bitmaps, closes the reader), and the only way back from
+it is `start()`, whose `innerStart()` resets `frameIndex = -1`. So any stop/start
+cycle during recompose replays the animation **from the beginning**. The decoder's
+lighter `pause()` / `resume()`, by contrast, keep all state and continue in place.
 
-This costs one redraw per display frame while visible and **does not change the
-decoding strategy**, so memory stays low.
+`ResilientApngDrawable` therefore:
+
+- forces `autoPlay` **off**, so the base class never auto-stops/-restarts the decoder
+  from `setVisible(...)`;
+- turns any external `stop()` or "became invisible" into a `frameSeqDecoder.pause()`
+  (state preserved) instead of a teardown;
+- on every `draw()` (i.e. whenever it is actually on screen) **resumes** the decoder
+  if it was paused, kicks off the very first play if it never started, and calls
+  `invalidateSelf()` so newly decoded frames are flushed even when Coil's callback
+  bridge isn't delivering them;
+- if a **finite** animation finished on its own, leaves it on the last frame.
+
+Net result: while on screen the animation runs continuously; an off-screen stretch
+just pauses it; coming back **resumes mid-animation**. This costs one redraw per
+display frame while visible and **does not change the decoding strategy**, so memory
+stays low.
 
 ### Why this is only a workaround
 
 To avoid restarting a finite animation that legitimately ended, the subclass must
-know whether the decoder *finished* vs was *stopped externally*. APNG4Android exposes
-no public way to tell these apart (`onAnimationEnd` fires for both), so the
+know whether the decoder *finished* vs was *paused/stopped externally*. APNG4Android
+exposes no public way to tell these apart (`onAnimationEnd` fires for both), so the
 `solution` branch reads `FrameSeqDecoder`'s private `finished` flag **via
 reflection** — which works, but breaks under R8/minification when the field is
 renamed. That fragility is exactly why this belongs in the library.
